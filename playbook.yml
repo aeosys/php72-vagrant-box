@@ -1,0 +1,93 @@
+---
+- hosts: all
+  become: true
+  vars:
+    apache_config_file: symfony.apache.conf
+  tasks:
+    # Packages
+    - name: Update apt cache
+      apt: update_cache=yes
+
+    - name: Install https transport
+      apt:
+        name: apt-transport-https
+        state: present
+        update_cache: yes
+
+    - name: Add repository key for PHP7
+      apt_key:
+        url: https://packages.sury.org/php/apt.gpg
+        state: present
+
+    - name: Add repository for PHP7
+      apt_repository: repo={{ item }} state=present update_cache=yes
+      with_items:
+        - deb https://packages.sury.org/php/ jessie main
+
+    - name: Install packages
+      apt: name={{ item }} state=latest
+      with_items:
+        - git
+        - apache2
+        - mariadb-server
+        - python-mysqldb
+
+    # Apache
+    - name: Enabled mod_rewrite
+      apache2_module: name=rewrite state=present
+      notify:
+        - restart apache2
+
+    - name: Move Apache configuration to quest
+      copy: src="{{ apache_config_file }}" dest=/etc/apache2/sites-available/dev-site.conf
+      notify:
+        - restart apache2
+
+    - name: Apply Apache configuration
+      command: a2ensite dev-site
+      args:
+        creates: /etc/apache2/sites-enabled/dev-site.conf
+      notify:
+        - restart apache2
+
+    - name: Disable default Apache configuration
+      command: a2dissite 000-default
+      args:
+        removes: /etc/apache2/sites-enabled/000-default.conf
+      notify:
+        - restart apache2
+
+    - name: Create db for site
+      mysql_db: name=site state=present
+
+    - name: Link www to home folder
+      file: src=/vagrant path=/var/www/site state=link force=yes
+
+    # PHP
+    - name: Install PHP7.2
+      apt: name={{ item }} state=latest
+      with_items:
+        - php7.2
+        - php7.2-bz2
+        - php7.2-curl
+        - php7.2-cli
+        - php7.2-dba
+        - php7.2-imap
+        - php7.2-intl
+        - php7.2-json
+        - php7.2-mbstring
+        - php7.2-mysql
+        - php7.2-odbc
+        - php7.2-soap
+        - php7.2-xml
+        - php7.2-zip
+
+    # Composer
+    - name: Install composer
+      shell: curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+      args:
+        creates: /usr/local/bin/composer
+
+  handlers:
+  - name: restart apache2
+    service: name=apache2 state=restarted
